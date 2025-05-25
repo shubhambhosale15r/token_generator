@@ -1,71 +1,86 @@
 import streamlit as st
-import webbrowser
 from fyers_apiv3 import fyersModel
+import urllib.parse
 
-# Constants - Replace with your own values
-REDIRECT_URI = "https://www.google.com/"  # Ideally, use a localhost URI for dev
-CLIENT_ID = "0F5WWD1SBL-100"
-SECRET_KEY = "5EME8IYZ76"
+st.set_page_config(page_title="Fyers OAuth2 Secure Flow", layout="centered")
+st.title("🔐 Fyers OAuth2 Authentication")
+
+REDIRECT_URI = "https://www.google.com/"
 GRANT_TYPE = "authorization_code"
 RESPONSE_TYPE = "code"
-STATE = "sample"
+STATE = "sample_state_123"
 
-st.set_page_config(page_title="Fyers OAuth App", layout="centered")
-st.title("🔐 Fyers API OAuth2 Authentication")
+# --- Step 1: Always show input for credentials ---
+CLIENT_ID = st.text_input("Enter Client ID (e.g., ABC123-100):")
+SECRET_KEY = st.text_input("Enter Secret Key:", type="password")
 
-# Step 1: Generate Auth URL
-if st.button("🔗 Generate Authorization URL"):
-    session = fyersModel.SessionModel(
-        client_id=CLIENT_ID,
-        redirect_uri=REDIRECT_URI,
-        response_type=RESPONSE_TYPE,
-        state=STATE,
-        secret_key=SECRET_KEY,
-        grant_type=GRANT_TYPE
-    )
-    auth_url = session.generate_authcode()
-    st.success("Authorization URL generated!")
-    st.markdown(f"[Click here to Authorize]({auth_url})", unsafe_allow_html=True)
-    st.session_state['session_obj'] = session
+if CLIENT_ID and SECRET_KEY:
+    # Button to generate Auth URL
+    if st.button("Generate Authorization URL"):
+        session = fyersModel.SessionModel(
+            client_id=CLIENT_ID,
+            redirect_uri=REDIRECT_URI,
+            response_type=RESPONSE_TYPE,
+            state=STATE,
+            secret_key=SECRET_KEY,
+            grant_type=GRANT_TYPE
+        )
+        auth_url = session.generate_authcode()
+        st.success("Authorization URL generated!")
+        st.markdown(f"[Click here to authorize]({auth_url})", unsafe_allow_html=True)
+        st.session_state['session_obj'] = session
+        st.session_state['client_id'] = CLIENT_ID
+        st.session_state['secret_key'] = SECRET_KEY
 
-# Step 2: User inputs authorization code
-auth_code = st.text_input("Paste the authorization code here (from URL after login):")
+    # Step 2: Paste auth code URL or code
+    auth_response = st.text_input("Paste redirected URL or auth code here:")
 
-if st.button("✅ Generate Access Token"):
-    if not auth_code:
-        st.error("Please paste the authorization code first.")
-    elif 'session_obj' not in st.session_state:
-        st.error("Please generate the authorization URL first.")
-    else:
-        session = st.session_state['session_obj']
-        session.set_token(auth_code)
-        response = session.generate_token()
-        if "access_token" in response:
-            access_token = response["access_token"]
-            st.session_state['access_token'] = access_token
-            st.success("Access Token generated successfully!")
-            st.code(access_token, language='text')
+    if st.button("Generate Access Token"):
+        if 'session_obj' not in st.session_state:
+            st.error("Generate authorization URL first.")
+        elif not auth_response:
+            st.error("Paste the redirected URL or code here.")
         else:
-            st.error(f"Failed to get token: {response}")
+            session = st.session_state['session_obj']
 
-# Step 3: Make API calls
-if 'access_token' in st.session_state:
-    st.subheader("📊 Fyers Account Details")
-    fyers = fyersModel.FyersModel(
-        token=st.session_state['access_token'],
-        is_async=False,
-        client_id=CLIENT_ID,
-        log_path=""
-    )
+            # Parse the code from full URL if pasted
+            parsed = urllib.parse.urlparse(auth_response)
+            params = urllib.parse.parse_qs(parsed.query)
+            code = params.get("code", [auth_response])[0]
 
-    if st.button("👤 Get Profile"):
-        profile = fyers.get_profile()
-        st.json(profile)
+            st.write(f"Extracted code: `{code}`")
 
-    if st.button("💰 Get Funds"):
-        funds = fyers.funds()
-        st.json(funds)
+            session.set_token(code)
+            token_response = session.generate_token()
+            st.write("Token response:", token_response)
 
-    if st.button("📈 Get Holdings"):
-        holdings = fyers.holdings()
-        st.json(holdings)
+            if "access_token" in token_response:
+                st.session_state['access_token'] = token_response["access_token"]
+                st.success("Access token generated!")
+                st.code(token_response["access_token"], language="text")
+            else:
+                st.error(f"Failed to generate token: {token_response}")
+
+    # Step 3: Use token to call APIs
+    if 'access_token' in st.session_state:
+        fyers = fyersModel.FyersModel(
+            token=st.session_state['access_token'],
+            is_async=False,
+            client_id=st.session_state['client_id'],
+            log_path=""
+        )
+
+        if st.button("Get Profile"):
+            profile = fyers.get_profile()
+            st.json(profile)
+
+        if st.button("Get Funds"):
+            funds = fyers.funds()
+            st.json(funds)
+
+        if st.button("Get Holdings"):
+            holdings = fyers.holdings()
+            st.json(holdings)
+
+else:
+    st.info("Please enter Client ID and Secret Key to start.")
