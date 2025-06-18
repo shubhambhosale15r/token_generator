@@ -48,11 +48,11 @@ if CLIENT_ID and SECRET_KEY:
             params = urllib.parse.parse_qs(parsed.query)
             code = params.get("code", [auth_response])[0]
 
-            st.write(f"Extracted code: `{code}`")
+            # st.write(f"Extracted code: `{code}`")
 
             session.set_token(code)
             token_response = session.generate_token()
-            st.write("Token response:", token_response)
+            # st.write("Token response:", token_response)
 
             if "access_token" in token_response:
                 st.session_state['access_token'] = token_response["access_token"]
